@@ -105,6 +105,9 @@ static void *handle_client(void *arg) {
         int current_count = lookup.count;
         pthread_mutex_unlock(&map_mutex);
 
+        // log receipt
+        printf("packet received! content: %s\n", buf);
+
         // Respond with a timestamped acknowledgement
         time_t clock = time(NULL);
         char response[1100];

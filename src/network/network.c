@@ -1,3 +1,6 @@
+#define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
+
 #include "config/config.h"
 #include "platform/input.h"
 #include "utils/error.h"
@@ -49,19 +52,27 @@ static void *sender(void *arg) {
 
 static void *network_handle_key_press_thread_main(void *arg __attribute__((unused)))
 {
-    // int fd = sock;
-    // const char *msg = "key pressed";
+  bongocat_log_info("Starting network handle key press thread");
+  int fd = sock;
 
-    // while (run_network) {
-    //   if (atomic_load(any_key_pressed)) {
-    //     send(fd, msg, strlen(msg), 0);
-    //     // 0.25s
-    //     // usleep(250 * 1000);
-    //     sleep(1);
-    //   }
-    // }
+  while (run_network) {
+    if (atomic_load(any_key_pressed)) {
+      bongocat_log_info("send - handle key press thread");
+      char msg[64];
+      struct timespec ts;
+      clock_gettime(CLOCK_REALTIME, &ts);
+      long long millis = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+      snprintf(msg, sizeof(msg), "key pressed %lld", millis);
+      send(fd, msg, strlen(msg), 0);
 
-    return NULL;
+      // 0.1s
+      usleep(100 * 1000);
+    }
+  }
+
+  bongocat_log_info("Exiting network handle key press thread");
+  return NULL;
+
 }
 
 bongocat_error_t network_init(config_t *config) {
