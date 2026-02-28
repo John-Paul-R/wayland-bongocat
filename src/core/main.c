@@ -8,6 +8,7 @@
 #include "platform/wayland.h"
 #include "utils/error.h"
 #include "utils/memory.h"
+#include "network/network.h"
 
 #include <signal.h>
 #include <stdatomic.h>
@@ -470,6 +471,13 @@ static bongocat_error_t system_initialize_components(void) {
     return result;
   }
 
+  result = network_init(&g_config);
+  if (result != BONGOCAT_SUCCESS) {
+    bongocat_log_error("Failed to initialize network: %s",
+                       bongocat_error_string(result));
+    return result;
+  }
+
   // Start animation thread
   result = animation_start();
   if (result != BONGOCAT_SUCCESS) {
@@ -497,6 +505,8 @@ static void system_cleanup_and_exit(int exit_code) {
 
   // Cleanup Wayland
   wayland_cleanup();
+
+  network_cleanup();
 
   // Cleanup input system
   input_cleanup();

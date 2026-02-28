@@ -4,6 +4,7 @@
 #include "core/bongocat.h"
 #include "utils/error.h"
 
+#include <netinet/in.h>
 #include <stdbool.h>
 
 // =============================================================================
@@ -82,6 +83,9 @@ typedef struct {
 
   // Fullscreen behavior
   int disable_fullscreen_hide;
+
+  // Network settings
+  struct sockaddr_in server_address;
 
   // Debug
   int enable_debug;

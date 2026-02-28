@@ -1,4 +1,7 @@
-#define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
+#include <arpa/inet.h>
+#include <linux/limits.h>
+// #define _POSIX_C_SOURCE 200809L
 #include "config/config.h"
 
 #include "utils/error.h"
@@ -456,6 +459,32 @@ config_parse_string_key(config_t *config, const char *key, const char *value) {
   return BONGOCAT_SUCCESS;
 }
 
+static int parse_addr(const char *str, struct sockaddr_in *out) {
+    char ip[64];
+    int port;
+
+    if (sscanf(str, "%63[^:]:%d", ip, &port) != 2) {
+        return -1;
+    }
+
+    out->sin_family = AF_INET;
+    out->sin_port = htons((uint16_t)port);
+    return inet_pton(AF_INET, ip, &out->sin_addr) == 1 ? 0 : -1;
+}
+
+static bongocat_error_t
+config_parse_sockaddr_in_key(config_t *config, const char *key, const char *value) {
+  if (strcmp(key, "server_address") == 0) {
+    if (parse_addr(value, &config->server_address) != 0) {
+      return BONGOCAT_ERROR_INVALID_PARAM;
+    }
+  } else {
+    return BONGOCAT_ERROR_INVALID_PARAM;  // Unknown key
+  }
+
+  return BONGOCAT_SUCCESS;
+}
+
 static bongocat_error_t
 config_parse_key_value(config_t *config, const char *key, const char *value) {
   // Try integer keys first
@@ -475,6 +504,10 @@ config_parse_key_value(config_t *config, const char *key, const char *value) {
 
   // Try string keys
   if (config_parse_string_key(config, key, value) == BONGOCAT_SUCCESS) {
+    return BONGOCAT_SUCCESS;
+  }
+
+  if (config_parse_sockaddr_in_key(config, key, value) == BONGOCAT_SUCCESS) {
     return BONGOCAT_SUCCESS;
   }
 

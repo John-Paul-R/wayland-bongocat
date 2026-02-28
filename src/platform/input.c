@@ -3,7 +3,6 @@
 #include "platform/input.h"
 
 #include "graphics/animation.h"
-#include "utils/memory.h"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -282,6 +281,7 @@ static void capture_input_hotplug(char **static_paths, int num_static,
 
         if (key_pressed) {
           atomic_store(last_key_code, code);
+          // This is where we need to send our requests
           animation_trigger();
         }
       }
