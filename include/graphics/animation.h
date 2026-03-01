@@ -50,4 +50,7 @@ void blit_image_scaled(uint8_t *dest, int dest_w, int dest_h,
 void draw_rect(uint8_t *dest, int width, int height, int x, int y, int w, int h,
                uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
+
+int get_frame_for_keycode(int keycode);
+
 #endif  // ANIMATION_H

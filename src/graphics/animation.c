@@ -338,7 +338,7 @@ static bool anim_is_sleep_time(const config_t *config) {
 
 // Get frame based on keyboard position (left=1, right=2)
 // Uses Linux input keycodes from <linux/input-event-codes.h>
-static int get_frame_for_keycode(int keycode) {
+int get_frame_for_keycode(int keycode) {
   // Left-hand keys on QWERTY keyboard
   // clang-format off
   static const int left_keys[] = {

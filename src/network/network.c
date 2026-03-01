@@ -4,6 +4,7 @@
 #include "config/config.h"
 #include "platform/input.h"
 #include "utils/error.h"
+#include "graphics/animation.h"
 #include <stdatomic.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -57,12 +58,19 @@ static void *network_handle_key_press_thread_main(void *arg __attribute__((unuse
 
   while (run_network) {
     if (atomic_load(any_key_pressed)) {
+      int key_code = atomic_load(last_key_code);
+      int active_frame = get_frame_for_keycode(key_code);
+      char* hand = "left";
+      if (active_frame == 2) {
+        hand = "right";
+      }
+
       bongocat_log_info("send - handle key press thread");
       char msg[64];
       struct timespec ts;
       clock_gettime(CLOCK_REALTIME, &ts);
       long long millis = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-      snprintf(msg, sizeof(msg), "key pressed %lld", millis);
+      snprintf(msg, sizeof(msg), "key pressed (%s) at %lld", hand, millis);
       send(fd, msg, strlen(msg), 0);
 
       // 0.1s
