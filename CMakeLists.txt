@@ -69,6 +69,7 @@ if(WIN32)
         src/platform/windows_display.c
         src/platform/windows_input.c
         src/platform/windows_process.c
+        src/platform/windows_time.c
     )
 
     set(PLATFORM_LIBS
@@ -101,6 +102,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         src/platform/linux_display.c
         src/platform/linux_input.c
         src/platform/linux_process.c
+        src/platform/linux_time.c
     )
 
     # Find Wayland

@@ -6,7 +6,7 @@
 #include "graphics/animation.h"
 #include "platform/platform_input.h"
 #include "platform/platform_process.h"
-#include "platform/wayland.h"
+#include "platform/display.h"
 #include "utils/error.h"
 #include "utils/memory.h"
 #include "network/network.h"
@@ -30,7 +30,11 @@ static volatile sig_atomic_t running = 1;
 static config_t g_config;
 static ConfigWatcher g_config_watcher = {.inotify_fd = -1, .watch_fd = -1};
 static bool g_manage_pid_file = true;
+#ifdef __linux__
 static process_handle_t g_singleton_lock = -1;
+#else
+static process_handle_t g_singleton_lock = NULL;
+#endif
 static const char *g_forced_monitor_name = NULL;
 static _Atomic bool g_reload_pending = false;
 
@@ -56,6 +60,7 @@ typedef struct {
 
 // PID file management now handled by platform_process.h
 
+#ifdef __linux__
 static int process_handle_toggle(void) {
   pid_t running_pid = process_get_singleton_holder("bongocat");
 
@@ -91,11 +96,13 @@ static int process_handle_toggle(void) {
 
   return 0;
 }
+#endif  // __linux__
 
 // =============================================================================
 // SIGNAL HANDLING MODULE
 // =============================================================================
 
+#ifdef __linux__
 static void signal_handler(int sig) {
   // Only async-signal-safe functions allowed here
   switch (sig) {
@@ -106,11 +113,9 @@ static void signal_handler(int sig) {
     running = 0;
     break;
   case SIGCHLD:
-#ifdef __linux__
-    // Reap zombie child processes (Linux-specific)
+    // Reap zombie child processes
     while (waitpid(-1, NULL, WNOHANG) > 0)
       ;
-#endif
     break;
   default:
     break;
@@ -185,6 +190,13 @@ static bongocat_error_t signal_setup_handlers(void) {
 
   return BONGOCAT_SUCCESS;
 }
+#else  // Windows stubs
+static bongocat_error_t signal_setup_handlers(void) {
+  // Windows: Use SetConsoleCtrlHandler for Ctrl+C handling
+  // For now, just return success - running flag can be controlled externally
+  return BONGOCAT_SUCCESS;
+}
+#endif  // __linux__
 
 // =============================================================================
 // CONFIGURATION MANAGEMENT MODULE
@@ -308,7 +320,7 @@ static void config_reload_apply(const char *config_path) {
   pthread_mutex_unlock(&anim_lock);
 
   // Update the running systems with new config
-  wayland_update_config(&g_config);
+  display_update_config(&g_config);
 
   // Check if input devices changed and restart monitoring if needed
   if (devices_changed) {
@@ -347,7 +359,7 @@ static void config_process_pending_reload(void) {
   config_reload_apply(config_path);
 }
 
-static void wayland_tick_callback(void) {
+static void display_tick_callback(void) {
   config_process_pending_reload();
 }
 
@@ -374,7 +386,7 @@ static bongocat_error_t system_initialize_components(void) {
   bongocat_error_t result;
 
   // Initialize Wayland
-  result = wayland_init(&g_config);
+  result = display_init(&g_config);
   if (result != BONGOCAT_SUCCESS) {
     bongocat_log_error("Failed to initialize Wayland: %s",
                        bongocat_error_string(result));
@@ -433,7 +445,7 @@ static void system_cleanup_and_exit(int exit_code) {
   animation_cleanup();
 
   // Cleanup Wayland
-  wayland_cleanup();
+  display_cleanup();
 
   network_cleanup();
 
@@ -573,6 +585,7 @@ int main(int argc, char *argv[]) {
   }
 
   // Handle toggle mode
+#ifdef __linux__
   if (args.toggle_mode && g_manage_pid_file) {
     int toggle_result = process_handle_toggle();
     if (toggle_result >= 0) {
@@ -584,6 +597,12 @@ int main(int argc, char *argv[]) {
         "--toggle is not valid in internal multi-monitor child mode");
     return 1;
   }
+#else
+  if (args.toggle_mode) {
+    bongocat_log_error("--toggle mode not supported on Windows");
+    return 1;
+  }
+#endif
 
   // Setup signal handlers
   result = signal_setup_handlers();
@@ -673,8 +692,8 @@ int main(int argc, char *argv[]) {
   bongocat_log_info("Bongo Cat Overlay started successfully");
 
   // Main Wayland event loop with graceful shutdown
-  wayland_set_tick_callback(wayland_tick_callback);
-  result = wayland_run(&running);
+  display_set_tick_callback(display_tick_callback);
+  result = display_run(&running);
   if (result != BONGOCAT_SUCCESS) {
     bongocat_log_error("Wayland event loop error: %s",
                        bongocat_error_string(result));

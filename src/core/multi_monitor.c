@@ -6,10 +6,13 @@
 #include "utils/error.h"
 
 #include <errno.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef __linux__
+#include <signal.h>
 #include <unistd.h>
+#endif
 
 int multi_monitor_launch(int argc, char *argv[], const char *config_path,
                          int watch_config, char **output_names,
@@ -34,6 +37,7 @@ int multi_monitor_launch(int argc, char *argv[], const char *config_path,
   bongocat_log_info("Multi-monitor mode: launching %zu instances",
                     output_count);
 
+#ifdef __linux__
   struct sigaction old_sigchld = {0};
   struct sigaction default_sigchld = {0};
   bool restore_sigchld = false;
@@ -46,6 +50,9 @@ int multi_monitor_launch(int argc, char *argv[], const char *config_path,
     bongocat_log_warning("Failed to override SIGCHLD handler: %s",
                          strerror(errno));
   }
+#else
+  bool restore_sigchld = false;
+#endif
 
   process_handle_t children[MULTI_MONITOR_MAX_OUTPUTS];
   for (size_t i = 0; i < MULTI_MONITOR_MAX_OUTPUTS; i++) {
@@ -90,9 +97,11 @@ int multi_monitor_launch(int argc, char *argv[], const char *config_path,
 
   if (alive == 0) {
     bongocat_log_error("Failed to launch any multi-monitor child instances");
+#ifdef __linux__
     if (restore_sigchld) {
       sigaction(SIGCHLD, &old_sigchld, NULL);
     }
+#endif
     return 1;
   }
 
@@ -144,9 +153,11 @@ int multi_monitor_launch(int argc, char *argv[], const char *config_path,
     }
   }
 
+#ifdef __linux__
   if (restore_sigchld) {
     sigaction(SIGCHLD, &old_sigchld, NULL);
   }
+#endif
 
   return exit_code;
 }

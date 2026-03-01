@@ -1,9 +1,15 @@
 #define _POSIX_C_SOURCE 200809L
 #include "utils/error.h"
+#include "platform/platform_time.h"
 
 #include <stdarg.h>
-#include <sys/time.h>
 #include <time.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/time.h>
+#endif
 
 static int debug_enabled = 1;
 
@@ -12,15 +18,21 @@ void bongocat_error_init(int enable_debug) {
 }
 
 static void log_timestamp(FILE *stream) {
-  struct timeval tv;
   struct tm tm_info;
   char timestamp[64];
 
-  gettimeofday(&tv, NULL);
-  localtime_r(&tv.tv_sec, &tm_info);  // Thread-safe version
+  int64_t time_us = platform_time_get_us();
+  time_t sec = (time_t)(time_us / 1000000LL);
+  long msec = (long)((time_us % 1000000LL) / 1000LL);
+
+#ifdef _WIN32
+  localtime_s(&tm_info, &sec);  // Windows thread-safe version
+#else
+  localtime_r(&sec, &tm_info);  // POSIX thread-safe version
+#endif
 
   strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &tm_info);
-  fprintf(stream, "[%s.%03ld] ", timestamp, tv.tv_usec / 1000);
+  fprintf(stream, "[%s.%03ld] ", timestamp, msec);
 }
 
 void bongocat_log_error(const char *format, ...) {

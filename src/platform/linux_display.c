@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #include "platform/wayland.h"
+#include "platform/display.h"
 
 #if defined(__GNUC__)
 #  pragma GCC diagnostic push
@@ -1554,4 +1555,40 @@ const char *wayland_get_current_layer_name(void) {
     return "TOP";
   }
   return current_config->layer == LAYER_OVERLAY ? "OVERLAY" : "TOP";
+}
+
+// =============================================================================
+// PLATFORM DISPLAY API IMPLEMENTATION (wraps Wayland functions)
+// =============================================================================
+
+bongocat_error_t display_init(config_t *config) {
+  return wayland_init(config);
+}
+
+bongocat_error_t display_run(volatile sig_atomic_t *running) {
+  return wayland_run(running);
+}
+
+void display_cleanup(void) {
+  wayland_cleanup();
+}
+
+void display_update_config(config_t *config) {
+  wayland_update_config(config);
+}
+
+int display_get_screen_width(void) {
+  return wayland_get_screen_width();
+}
+
+const char *display_get_output_name(void) {
+  return wayland_get_output_name();
+}
+
+void display_set_tick_callback(void (*callback)(void)) {
+  wayland_set_tick_callback(callback);
+}
+
+const char *display_get_current_layer_name(void) {
+  return wayland_get_current_layer_name();
 }

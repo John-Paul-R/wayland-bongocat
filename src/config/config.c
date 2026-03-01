@@ -1,6 +1,19 @@
 #define _GNU_SOURCE
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
+#endif
+
+#ifdef __linux__
 #include <linux/limits.h>
+#include <dirent.h>
+#include <linux/input.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#endif
+
 // #define _POSIX_C_SOURCE 200809L
 #include "config/config.h"
 
@@ -8,15 +21,11 @@
 #include "utils/memory.h"
 
 #include <ctype.h>
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <linux/input.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
 
 // =============================================================================
 // CONFIGURATION CONSTANTS AND VALIDATION RANGES
@@ -191,6 +200,7 @@ static bongocat_error_t config_add_keyboard_device(config_t *config,
   return BONGOCAT_SUCCESS;
 }
 
+#ifdef __linux__
 static bongocat_error_t config_resolve_devices(config_t *config) {
   if (config->num_names == 0) {
     return BONGOCAT_SUCCESS;
@@ -243,6 +253,13 @@ static bongocat_error_t config_resolve_devices(config_t *config) {
   closedir(dir);
   return BONGOCAT_SUCCESS;
 }
+#else
+static bongocat_error_t config_resolve_devices(config_t *config) {
+  // Windows doesn't use device paths - keyboard hook is global
+  (void)config;
+  return BONGOCAT_SUCCESS;
+}
+#endif
 
 static void config_free_string_array(char ***array_ptr, int *count) {
   if (*array_ptr) {

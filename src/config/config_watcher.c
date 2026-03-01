@@ -5,6 +5,8 @@
 #include "utils/error.h"
 
 #include <string.h>
+
+#ifdef __linux__
 #include <sys/select.h>
 #include <time.h>
 #include <unistd.h>
@@ -239,3 +241,42 @@ void config_watcher_cleanup(ConfigWatcher *watcher) {
   watcher->inotify_fd = -1;
   watcher->watch_fd = -1;
 }
+
+#else // Windows stubs
+
+int config_watcher_init(ConfigWatcher *watcher, const char *config_path,
+                        void (*callback)(const char *)) {
+  if (!watcher || !config_path || !callback) {
+    return -1;
+  }
+
+  memset(watcher, 0, sizeof(ConfigWatcher));
+  watcher->inotify_fd = -1;
+  watcher->watch_fd = -1;
+  watcher->watching = false;
+  
+  bongocat_log_info("Config watching not supported on Windows");
+  return 0;
+}
+
+void config_watcher_start(ConfigWatcher *watcher) {
+  // No-op on Windows
+  (void)watcher;
+}
+
+void config_watcher_stop(ConfigWatcher *watcher) {
+  // No-op on Windows
+  (void)watcher;
+}
+
+void config_watcher_cleanup(ConfigWatcher *watcher) {
+  if (!watcher) {
+    return;
+  }
+  
+  memset(watcher, 0, sizeof(ConfigWatcher));
+  watcher->inotify_fd = -1;
+  watcher->watch_fd = -1;
+}
+
+#endif // __linux__

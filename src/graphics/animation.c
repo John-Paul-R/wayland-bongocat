@@ -5,6 +5,8 @@
 #include "graphics/embedded_assets.h"
 #include "platform/platform_input.h"
 #include "platform/platform_threads.h"
+#include "platform/platform_time.h"
+#include "platform/display.h"
 #include "utils/memory.h"
 
 #if defined(__GNUC__)
@@ -17,8 +19,6 @@
 #  pragma GCC diagnostic pop
 #endif
 #include <time.h>
-
-void draw_bar(void);
 
 // =============================================================================
 // GLOBAL STATE AND CONFIGURATION
@@ -314,9 +314,7 @@ typedef struct {
 } animation_state_t;
 
 static long anim_get_current_time_us(void) {
-  struct timeval now;
-  gettimeofday(&now, NULL);
-  return now.tv_sec * 1000000 + now.tv_usec;
+  return (long)platform_time_get_us();
 }
 
 static bool anim_is_sleep_time(const config_t *config) {

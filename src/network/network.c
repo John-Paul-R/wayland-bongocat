@@ -7,16 +7,25 @@
 #include "utils/error.h"
 #include "graphics/animation.h"
 #include <stdatomic.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+// Windows socket compatibility
+#define close closesocket
+typedef int socklen_t;
+#else
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <netdb.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 #include <unistd.h>
-#include <errno.h>
 #include <arpa/inet.h>
+#endif
 
 static config_t *current_config;
 static int sock = 0;
@@ -132,6 +141,15 @@ bongocat_error_t network_init(config_t *config) {
     current_config = config;
     bongocat_log_info("Initializing network system");
 
+#ifdef _WIN32
+    // Initialize Winsock on Windows
+    WSADATA wsa_data;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
+        bongocat_log_error("WSAStartup failed: error %d", WSAGetLastError());
+        return BONGOCAT_ERROR_NETWORK;
+    }
+#endif
+
     struct sockaddr_in *ip_of_server = &current_config->server_address;
     if (ip_of_server == NULL) {
         bongocat_log_error("Server address is NULL\n");
@@ -184,6 +202,10 @@ void network_cleanup(void) {
   if (network_initialized) {
     network_initialized = false;
   }
+
+#ifdef _WIN32
+  WSACleanup();
+#endif
 
   bongocat_log_debug("Network cleanup complete");
 }

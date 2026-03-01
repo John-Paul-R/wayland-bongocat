@@ -30,9 +30,8 @@ extern struct wl_surface *surface;
 extern struct wl_buffer *buffer;
 extern uint8_t *pixels;
 
-// Thread-safe state flags
-extern atomic_bool configured;
-extern atomic_bool fullscreen_detected;
+// Note: Thread-safe state flags (configured, fullscreen_detected) are now
+// declared in platform/display.h for cross-platform compatibility
 
 // =============================================================================
 // WAYLAND LIFECYCLE FUNCTIONS
@@ -54,8 +53,7 @@ void wayland_cleanup(void);
 // Update configuration (hot-reload support)
 void wayland_update_config(config_t *config);
 
-// Draw the overlay bar
-void draw_bar(void);
+// Note: draw_bar() is now declared in platform/display.h for cross-platform use
 
 // Create shared memory buffer - returns fd or -1 on error
 BONGOCAT_NODISCARD int create_shm(int size);
