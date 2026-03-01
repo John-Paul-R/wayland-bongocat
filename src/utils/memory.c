@@ -1,8 +1,8 @@
 #include "utils/memory.h"
 
+#include "platform/platform_threads.h"
 #include "utils/error.h"
 
-#include <pthread.h>
 #include <string.h>
 
 static memory_stats_t g_memory_stats = {0};

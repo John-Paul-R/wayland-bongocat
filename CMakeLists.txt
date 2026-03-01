@@ -98,8 +98,9 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(STATUS "Linux platform detected")
 
     set(PLATFORM_SOURCES
-        src/platform/wayland.c
-        src/platform/input.c
+        src/platform/linux_display.c
+        src/platform/linux_input.c
+        src/platform/linux_process.c
     )
 
     # Find Wayland

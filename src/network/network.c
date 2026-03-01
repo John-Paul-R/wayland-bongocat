@@ -2,7 +2,8 @@
 #define _DEFAULT_SOURCE
 
 #include "config/config.h"
-#include "platform/input.h"
+#include "platform/platform_input.h"
+#include "platform/platform_threads.h"
 #include "utils/error.h"
 #include "graphics/animation.h"
 #include <stdatomic.h>
@@ -16,7 +17,6 @@
 #include <unistd.h>
 #include <errno.h>
 #include <arpa/inet.h>
-#include <pthread.h>
 
 static config_t *current_config;
 static int sock = 0;

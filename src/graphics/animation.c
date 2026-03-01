@@ -3,7 +3,8 @@
 #include "graphics/animation.h"
 
 #include "graphics/embedded_assets.h"
-#include "platform/input.h"
+#include "platform/platform_input.h"
+#include "platform/platform_threads.h"
 #include "utils/memory.h"
 
 #if defined(__GNUC__)

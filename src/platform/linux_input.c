@@ -1,8 +1,9 @@
 #define _POSIX_C_SOURCE 200809L
 #define _DEFAULT_SOURCE
-#include "platform/input.h"
+#include "platform/platform_input.h"
 
 #include "graphics/animation.h"
+#include "utils/error.h"
 
 #include <dirent.h>
 #include <fcntl.h>

@@ -4,7 +4,8 @@
 #include "core/bongocat.h"
 #include "core/multi_monitor.h"
 #include "graphics/animation.h"
-#include "platform/input.h"
+#include "platform/platform_input.h"
+#include "platform/platform_process.h"
 #include "platform/wayland.h"
 #include "utils/error.h"
 #include "utils/memory.h"
@@ -15,9 +16,11 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/file.h>
-#include <sys/wait.h>
 #include <unistd.h>
+
+#ifdef __linux__
+#include <sys/wait.h>
+#endif
 
 // =============================================================================
 // GLOBAL STATE AND CONFIGURATION
@@ -27,6 +30,7 @@ static volatile sig_atomic_t running = 1;
 static config_t g_config;
 static ConfigWatcher g_config_watcher = {.inotify_fd = -1, .watch_fd = -1};
 static bool g_manage_pid_file = true;
+static process_handle_t g_singleton_lock = -1;
 static const char *g_forced_monitor_name = NULL;
 static _Atomic bool g_reload_pending = false;
 
@@ -50,87 +54,10 @@ typedef struct {
 // PROCESS MANAGEMENT MODULE
 // =============================================================================
 
-static int process_create_pid_file(void) {
-  int fd = open(PID_FILE, O_CREAT | O_WRONLY | O_TRUNC, 0644);
-  if (fd < 0) {
-    bongocat_log_error("Failed to create PID file: %s", strerror(errno));
-    return -1;
-  }
-
-  if (flock(fd, LOCK_EX | LOCK_NB) < 0) {
-    int lock_err = errno;
-    close(fd);
-    if (lock_err == EWOULDBLOCK) {
-      bongocat_log_info("Another instance is already running");
-      return -2;  // Already running
-    }
-    bongocat_log_error("Failed to lock PID file: %s", strerror(lock_err));
-    return -1;
-  }
-
-  char pid_str[32];
-  snprintf(pid_str, sizeof(pid_str), "%d\n", getpid());
-  if (write(fd, pid_str, strlen(pid_str)) < 0) {
-    bongocat_log_error("Failed to write PID to file: %s", strerror(errno));
-    close(fd);
-    return -1;
-  }
-
-  return fd;  // Keep file descriptor open to maintain lock
-}
-
-static void process_remove_pid_file(void) {
-  unlink(PID_FILE);
-}
-
-static pid_t process_get_running_pid(void) {
-  int fd = open(PID_FILE, O_RDONLY);
-  if (fd < 0) {
-    return -1;  // No PID file exists
-  }
-
-  // Try to get a shared lock to read the file
-  if (flock(fd, LOCK_SH | LOCK_NB) < 0) {
-    int lock_err = errno;
-    close(fd);
-    if (lock_err == EWOULDBLOCK) {
-      // File is locked by another process, so it's running
-      // We need to read the PID anyway, so let's try without lock
-      fd = open(PID_FILE, O_RDONLY);
-      if (fd < 0)
-        return -1;
-    } else {
-      return -1;
-    }
-  }
-
-  char pid_str[32];
-  ssize_t bytes_read = read(fd, pid_str, sizeof(pid_str) - 1);
-  close(fd);
-
-  if (bytes_read <= 0) {
-    return -1;
-  }
-
-  pid_str[bytes_read] = '\0';
-  pid_t pid = (pid_t)atoi(pid_str);
-
-  if (pid <= 0) {
-    return -1;
-  }
-
-  // Check if process is actually running
-  if (kill(pid, 0) == 0) {
-    return pid;  // Process is running
-  }
-
-  // Process is not running, remove stale PID file
-  process_remove_pid_file();
-  return -1;
-}
+// PID file management now handled by platform_process.h
 
 static int process_handle_toggle(void) {
-  pid_t running_pid = process_get_running_pid();
+  pid_t running_pid = process_get_singleton_holder("bongocat");
 
   if (running_pid > 0) {
     // Process is running, kill it
@@ -139,7 +66,7 @@ static int process_handle_toggle(void) {
     if (kill(-running_pid, SIGTERM) == 0) {
       // Wait a bit for graceful shutdown
       for (int i = 0; i < 50; i++) {  // Wait up to 5 seconds
-        if (kill(-running_pid, 0) != 0) {
+        if (!process_is_valid(running_pid)) {
           bongocat_log_info("Bongocat stopped successfully");
           return 0;
         }
@@ -148,9 +75,8 @@ static int process_handle_toggle(void) {
 
       // Force kill if still running
       bongocat_log_warning("Force killing bongocat");
-      if (kill(running_pid, SIGKILL) != 0) {
-        bongocat_log_error("Failed to force kill bongocat: %s",
-                           strerror(errno));
+      if (!process_terminate(running_pid)) {
+        bongocat_log_error("Failed to force kill bongocat");
         return 1;
       }
       bongocat_log_info("Bongocat force stopped");
@@ -180,8 +106,11 @@ static void signal_handler(int sig) {
     running = 0;
     break;
   case SIGCHLD:
+#ifdef __linux__
+    // Reap zombie child processes (Linux-specific)
     while (waitpid(-1, NULL, WNOHANG) > 0)
       ;
+#endif
     break;
   default:
     break;
@@ -492,9 +421,9 @@ static bongocat_error_t system_initialize_components(void) {
 static void system_cleanup_and_exit(int exit_code) {
   bongocat_log_info("Performing cleanup...");
 
-  // Remove PID file
-  if (g_manage_pid_file) {
-    process_remove_pid_file();
+  // Release singleton lock
+  if (g_manage_pid_file && g_singleton_lock != process_invalid_handle()) {
+    process_release_singleton_lock(g_singleton_lock);
   }
 
   // Stop config watcher
@@ -664,17 +593,17 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // Create PID file to track this instance
+  // Create singleton lock to track this instance
   if (g_manage_pid_file) {
-    int pid_fd = process_create_pid_file();
-    if (pid_fd == -2) {
-      bongocat_log_error("Another instance of bongocat is already running");
-      return 1;
-    } else if (pid_fd < 0) {
-      bongocat_log_error("Failed to create PID file");
+    g_singleton_lock = process_create_singleton_lock("bongocat");
+    if (g_singleton_lock == process_invalid_handle()) {
+      if (process_singleton_exists("bongocat")) {
+        bongocat_log_error("Another instance of bongocat is already running");
+      } else {
+        bongocat_log_error("Failed to create singleton lock");
+      }
       return 1;
     }
-    (void)pid_fd;
   }
 
   // Resolve and load configuration
@@ -683,8 +612,8 @@ int main(int argc, char *argv[]) {
   if (result != BONGOCAT_SUCCESS) {
     bongocat_log_error("Failed to load configuration: %s",
                        bongocat_error_string(result));
-    if (g_manage_pid_file) {
-      process_remove_pid_file();
+    if (g_manage_pid_file && g_singleton_lock != process_invalid_handle()) {
+      process_release_singleton_lock(g_singleton_lock);
     }
     free(resolved_config);
     return 1;
