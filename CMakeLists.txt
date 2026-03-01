@@ -80,17 +80,10 @@ if(WIN32)
     )
 
     # pthreads-win32 handling
-    if(CMAKE_CROSSCOMPILING)
-        # When cross-compiling, assume pthreads-win32 is in the toolchain
-        find_library(PTHREAD_WIN32_LIB NAMES pthread libpthread pthreadGC2)
-        if(PTHREAD_WIN32_LIB)
-            list(APPEND PLATFORM_LIBS ${PTHREAD_WIN32_LIB})
-            message(STATUS "Found pthreads-win32: ${PTHREAD_WIN32_LIB}")
-        else()
-            message(WARNING "pthreads-win32 not found, you may need to install it")
-        endif()
-    else()
-        # Native Windows build
+    # With -static flag, the static library is automatically linked by GCC
+    # No need to explicitly link pthread - it's handled by the toolchain
+    if(NOT CMAKE_CROSSCOMPILING)
+        # Native Windows build only
         find_package(Threads REQUIRED)
         list(APPEND PLATFORM_LIBS Threads::Threads)
     endif()
@@ -240,10 +233,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_custom_target(wayland-protocols DEPENDS ${PROTOCOL_HEADERS})
     add_dependencies(bongocat wayland-protocols)
 else()
-    add_executable(bongocat
+    # Windows: build as GUI app to enable window creation, but allocate console for logging
+    add_executable(bongocat WIN32
         ${COMMON_SOURCES}
         ${PLATFORM_SOURCES}
     )
+
+    # On Windows, we need GUI subsystem for window creation
+    # We'll allocate console manually in code for logging
+    if(MINGW)
+        target_link_options(bongocat PRIVATE -mwindows)
+    endif()
 endif()
 
 # Include directories

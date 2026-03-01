@@ -38,8 +38,8 @@ set(CMAKE_SHARED_LIBRARY_SUFFIX ".dll")
 set(CMAKE_STATIC_LIBRARY_PREFIX "lib")
 set(CMAKE_STATIC_LIBRARY_SUFFIX ".a")
 
-# Ensure static linking of MinGW runtime (makes .exe more portable)
-set(CMAKE_EXE_LINKER_FLAGS_INIT "-static-libgcc")
+# Ensure static linking of MinGW runtime and pthread (makes .exe more portable)
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-static-libgcc -static")
 
 # Windows-specific definitions
 add_definitions(-DUNICODE -D_UNICODE)

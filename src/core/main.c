@@ -388,7 +388,7 @@ static bongocat_error_t system_initialize_components(void) {
   // Initialize Wayland
   result = display_init(&g_config);
   if (result != BONGOCAT_SUCCESS) {
-    bongocat_log_error("Failed to initialize Wayland: %s",
+    bongocat_log_error("Failed to initialize display system: %s",
                        bongocat_error_string(result));
     return result;
   }
@@ -412,20 +412,27 @@ static bongocat_error_t system_initialize_components(void) {
     return result;
   }
 
+  bongocat_log_debug("Initializing network (optional)");
   result = network_init(&g_config);
   if (result != BONGOCAT_SUCCESS) {
-    bongocat_log_error("Failed to initialize network: %s",
-                       bongocat_error_string(result));
-    return result;
+    bongocat_log_warning("Network initialization failed (non-fatal): %s",
+                         bongocat_error_string(result));
+    // Network is optional - don't fail if it doesn't connect
+    fflush(stdout);
+    fflush(stderr);
+  } else {
+    bongocat_log_debug("Network initialized successfully");
   }
 
   // Start animation thread
+  bongocat_log_debug("Starting animation thread");
   result = animation_start();
   if (result != BONGOCAT_SUCCESS) {
     bongocat_log_error("Failed to start animation thread: %s",
                        bongocat_error_string(result));
     return result;
   }
+  bongocat_log_debug("Animation thread started successfully");
 
   return BONGOCAT_SUCCESS;
 }
@@ -487,9 +494,15 @@ static void cli_show_help(const char *program_name) {
          "running, stop if running)\n");
   printf("  -m, --monitor NAME    Bind to a specific monitor output\n");
   printf("\nConfiguration search order:\n");
+#ifdef _WIN32
+  printf("  1. %%APPDATA%%\\bongocat\\bongocat.conf\n");
+  printf("  2. %%USERPROFILE%%\\bongocat.conf\n");
+  printf("  3. .\\bongocat.conf (current directory)\n");
+#else
   printf("  1. $XDG_CONFIG_HOME/bongocat/bongocat.conf\n");
   printf("  2. ~/.config/bongocat/bongocat.conf\n");
   printf("  3. ./bongocat.conf\n");
+#endif
   printf("\nMulti-monitor: set monitor=OUT1,OUT2 in config to show on "
          "multiple monitors.\n");
 }
@@ -553,6 +566,24 @@ static int cli_parse_arguments(int argc, char *argv[], cli_args_t *args) {
 
 int main(int argc, char *argv[]) {
   bongocat_error_t result;
+
+#ifdef _WIN32
+  // Redirect stdout and stderr to log file for Windows GUI app
+  FILE *fDummy;
+  freopen_s(&fDummy, "bongocat.log", "w", stdout);
+  freopen_s(&fDummy, "bongocat.log", "w", stderr);
+  
+  // Ensure logs are written immediately
+  setvbuf(stdout, NULL, _IONBF, 0);
+  setvbuf(stderr, NULL, _IONBF, 0);
+  
+  // Initialize Winsock early (needed for DNS resolution during config parsing)
+  WSADATA wsa_data;
+  if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
+    fprintf(stderr, "WSAStartup failed\n");
+    return 1;
+  }
+#endif
 
   // Initialize error system early
   bongocat_error_init(1);  // Enable debug initially
@@ -701,6 +732,11 @@ int main(int argc, char *argv[]) {
   }
 
   bongocat_log_info("Main loop exited, shutting down");
+  
+#ifdef _WIN32
+  WSACleanup();
+#endif
+  
   system_cleanup_and_exit(0);
 
   return 0;  // Never reached

@@ -92,6 +92,8 @@ const char *bongocat_error_string(bongocat_error_t error) {
     return "File I/O error";
   case BONGOCAT_ERROR_WAYLAND:
     return "Wayland error";
+  case BONGOCAT_ERROR_DISPLAY:
+    return "Display error";
   case BONGOCAT_ERROR_CONFIG:
     return "Configuration error";
   case BONGOCAT_ERROR_INPUT:

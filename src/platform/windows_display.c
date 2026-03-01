@@ -196,7 +196,7 @@ static bongocat_error_t create_dib_section(void) {
     
     if (!g_hdc_mem) {
         bongocat_log_error("Failed to create memory DC");
-        return BONGOCAT_ERROR_WAYLAND;
+        return BONGOCAT_ERROR_DISPLAY;
     }
     
     BITMAPINFO bmi = {0};
@@ -212,7 +212,7 @@ static bongocat_error_t create_dib_section(void) {
     
     if (!g_hbitmap || !g_pixels) {
         bongocat_log_error("Failed to create DIB section");
-        return BONGOCAT_ERROR_WAYLAND;
+        return BONGOCAT_ERROR_DISPLAY;
     }
     
     SelectObject(g_hdc_mem, g_hbitmap);
@@ -246,38 +246,64 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
 }
 
 static bongocat_error_t create_overlay_window(void) {
+    bongocat_log_debug("create_overlay_window: Starting");
+    
+    HINSTANCE hInstance = GetModuleHandle(NULL);
+    if (!hInstance) {
+        bongocat_log_error("GetModuleHandle returned NULL");
+        return BONGOCAT_ERROR_DISPLAY;
+    }
+    bongocat_log_debug("GetModuleHandle OK: %p", hInstance);
+    
     WNDCLASSEXA wc = {0};
     wc.cbSize = sizeof(WNDCLASSEXA);
     wc.lpfnWndProc = window_proc;
-    wc.hInstance = GetModuleHandle(NULL);
+    wc.hInstance = hInstance;
     wc.lpszClassName = WINDOW_CLASS_NAME;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = NULL;  // No background brush for layered window
+    wc.style = CS_HREDRAW | CS_VREDRAW;
     
+    bongocat_log_debug("Registering window class: %s", WINDOW_CLASS_NAME);
     if (!RegisterClassExA(&wc)) {
         DWORD err = GetLastError();
         if (err != ERROR_CLASS_ALREADY_EXISTS) {
             bongocat_log_error("Failed to register window class: %lu", err);
-            return BONGOCAT_ERROR_WAYLAND;
+            return BONGOCAT_ERROR_DISPLAY;
         }
+        bongocat_log_debug("Window class already registered, continuing");
+    } else {
+        bongocat_log_debug("Window class registered successfully");
     }
     
     // Create layered window
+    bongocat_log_debug("Creating window: %dx%d", g_window_width, g_window_height);
+    
     g_hwnd = CreateWindowExA(
         WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
         WINDOW_CLASS_NAME,
         WINDOW_TITLE,
         WS_POPUP,
         0, 0, g_window_width, g_window_height,
-        NULL, NULL, GetModuleHandle(NULL), NULL
+        NULL, NULL, hInstance, NULL
     );
     
     if (!g_hwnd) {
-        bongocat_log_error("Failed to create window: %lu", GetLastError());
-        return BONGOCAT_ERROR_WAYLAND;
+        DWORD err = GetLastError();
+        bongocat_log_error("CreateWindowExA failed: %lu (0x%08lX)", err, err);
+        bongocat_log_error("  Class: %s", WINDOW_CLASS_NAME);
+        bongocat_log_error("  Title: %s", WINDOW_TITLE);
+        bongocat_log_error("  Size: %dx%d", g_window_width, g_window_height);
+        return BONGOCAT_ERROR_DISPLAY;
     }
     
+    bongocat_log_debug("CreateWindowExA succeeded: hwnd=%p", g_hwnd);
+    
     update_window_position();
+    bongocat_log_debug("Window position updated");
+    
     ShowWindow(g_hwnd, SW_SHOW);
+    bongocat_log_debug("ShowWindow called");
     
     bongocat_log_info("Created overlay window");
     return BONGOCAT_SUCCESS;
@@ -288,7 +314,10 @@ static bongocat_error_t create_overlay_window(void) {
 // =============================================================================
 
 bongocat_error_t display_init(config_t *config) {
+    bongocat_log_debug("display_init: Entry");
+    
     if (!config) {
+        bongocat_log_error("display_init: config is NULL");
         return BONGOCAT_ERROR_INVALID_PARAM;
     }
     
@@ -300,16 +329,22 @@ bongocat_error_t display_init(config_t *config) {
                      g_window_width, g_window_height);
     
     // Create DIB section for rendering
+    bongocat_log_debug("display_init: Creating DIB section");
     bongocat_error_t result = create_dib_section();
     if (result != BONGOCAT_SUCCESS) {
+        bongocat_log_error("display_init: create_dib_section failed");
         return result;
     }
+    bongocat_log_debug("display_init: DIB section created");
     
     // Create overlay window
+    bongocat_log_debug("display_init: Creating overlay window");
     result = create_overlay_window();
     if (result != BONGOCAT_SUCCESS) {
+        bongocat_log_error("display_init: create_overlay_window failed");
         return result;
     }
+    bongocat_log_debug("display_init: Overlay window created");
     
     atomic_store(&configured, true);
     
@@ -320,7 +355,7 @@ bongocat_error_t display_init(config_t *config) {
 bongocat_error_t display_run(volatile sig_atomic_t *running) {
     if (!g_hwnd) {
         bongocat_log_error("Window not initialized");
-        return BONGOCAT_ERROR_WAYLAND;
+        return BONGOCAT_ERROR_DISPLAY;
     }
     
     g_running = running;

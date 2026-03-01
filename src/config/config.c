@@ -4,6 +4,7 @@
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
+#include <netdb.h>
 #endif
 
 #ifdef __linux__
@@ -477,22 +478,76 @@ config_parse_string_key(config_t *config, const char *key, const char *value) {
 }
 
 static int parse_addr(const char *str, struct sockaddr_in *out) {
-    char ip[64];
+    char host[256];
     int port;
 
-    if (sscanf(str, "%63[^:]:%d", ip, &port) != 2) {
+    if (sscanf(str, "%255[^:]:%d", host, &port) != 2) {
+        bongocat_log_warning("Failed to parse address format '%s' (expected host:port)", str);
         return -1;
     }
 
+    bongocat_log_debug("Parsing address: host='%s', port=%d", host, port);
+
     out->sin_family = AF_INET;
     out->sin_port = htons((uint16_t)port);
-    return inet_pton(AF_INET, ip, &out->sin_addr) == 1 ? 0 : -1;
+    
+    // Try direct IP address first
+    if (inet_pton(AF_INET, host, &out->sin_addr) == 1) {
+        bongocat_log_debug("Parsed as IP address: %s", host);
+        return 0;
+    }
+    
+    // If not an IP, try DNS resolution
+    bongocat_log_debug("Not an IP address, attempting DNS resolution for '%s'", host);
+    
+    struct addrinfo hints = {0};
+    struct addrinfo *result = NULL;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    
+    int status = getaddrinfo(host, NULL, &hints, &result);
+    bongocat_log_debug("getaddrinfo returned status: %d", status);
+    
+    if (status != 0) {
+#ifdef _WIN32
+        bongocat_log_warning("Failed to resolve hostname '%s': error %d", host, status);
+#else
+        bongocat_log_warning("Failed to resolve hostname '%s': %s", host, gai_strerror(status));
+#endif
+        return -1;
+    }
+    
+    bongocat_log_debug("getaddrinfo succeeded, checking result");
+    
+    if (!result || !result->ai_addr) {
+        bongocat_log_error("getaddrinfo returned NULL result for '%s'", host);
+        if (result) {
+            freeaddrinfo(result);
+        }
+        return -1;
+    }
+    
+    bongocat_log_debug("Result is valid, extracting address");
+    
+    // Copy the resolved address
+    struct sockaddr_in *resolved = (struct sockaddr_in *)result->ai_addr;
+    out->sin_addr = resolved->sin_addr;
+    
+    // Log the resolved IP
+    char resolved_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &out->sin_addr, resolved_ip, sizeof(resolved_ip));
+    bongocat_log_info("Resolved '%s' to %s", host, resolved_ip);
+    
+    freeaddrinfo(result);
+    return 0;
 }
 
 static bongocat_error_t
 config_parse_sockaddr_in_key(config_t *config, const char *key, const char *value) {
   if (strcmp(key, "server_address") == 0) {
+    bongocat_log_debug("Parsing server_address config: '%s'", value);
     if (parse_addr(value, &config->server_address) != 0) {
+      bongocat_log_error("Failed to parse server_address: '%s'", value);
       return BONGOCAT_ERROR_INVALID_PARAM;
     }
   } else {
@@ -709,6 +764,7 @@ static void config_set_defaults(config_t *config) {
       .sleep_end = (config_time_t){0, 0},
       .idle_sleep_timeout_sec = 0,
       .disable_fullscreen_hide = 0,
+      .server_address = {0}, // Initialize to zeros (no server by default)
   };
 }
 
@@ -834,6 +890,30 @@ char *config_resolve_path(const char *explicit_path) {
 
   char path[PATH_MAX];
 
+#ifdef _WIN32
+  // 1. %APPDATA%\bongocat\bongocat.conf
+  const char *appdata = getenv("APPDATA");
+  if (appdata && appdata[0] != '\0') {
+    snprintf(path, sizeof(path), "%s\\bongocat\\bongocat.conf", appdata);
+    if (access(path, R_OK) == 0) {
+      return strdup(path);
+    }
+  }
+
+  // 2. %USERPROFILE%\bongocat.conf
+  const char *userprofile = getenv("USERPROFILE");
+  if (userprofile && userprofile[0] != '\0') {
+    snprintf(path, sizeof(path), "%s\\bongocat.conf", userprofile);
+    if (access(path, R_OK) == 0) {
+      return strdup(path);
+    }
+  }
+
+  // 3. .\bongocat.conf (same directory as executable)
+  if (access("bongocat.conf", R_OK) == 0) {
+    return strdup("bongocat.conf");
+  }
+#else
   // 1. $XDG_CONFIG_HOME/bongocat/bongocat.conf
   const char *xdg_config = getenv("XDG_CONFIG_HOME");
   if (xdg_config && xdg_config[0] != '\0') {
@@ -856,6 +936,7 @@ char *config_resolve_path(const char *explicit_path) {
   if (access("bongocat.conf", R_OK) == 0) {
     return strdup("bongocat.conf");
   }
+#endif
 
   // No config found — will use defaults
   return NULL;

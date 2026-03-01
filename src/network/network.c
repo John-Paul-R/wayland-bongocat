@@ -141,19 +141,18 @@ bongocat_error_t network_init(config_t *config) {
     current_config = config;
     bongocat_log_info("Initializing network system");
 
-#ifdef _WIN32
-    // Initialize Winsock on Windows
-    WSADATA wsa_data;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
-        bongocat_log_error("WSAStartup failed: error %d", WSAGetLastError());
-        return BONGOCAT_ERROR_NETWORK;
-    }
-#endif
+    // Note: WSAStartup is now called in main() on Windows (needed for DNS during config parsing)
 
     struct sockaddr_in *ip_of_server = &current_config->server_address;
     if (ip_of_server == NULL) {
         bongocat_log_error("Server address is NULL\n");
         return BONGOCAT_ERROR_INVALID_PARAM;
+    }
+
+    // Check if server address is actually configured (not 0.0.0.0:0)
+    if (ip_of_server->sin_addr.s_addr == 0 || ip_of_server->sin_port == 0) {
+        bongocat_log_info("No network server configured (server_address not set in config)");
+        return BONGOCAT_ERROR_NETWORK;
     }
 
     sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -163,7 +162,10 @@ bongocat_error_t network_init(config_t *config) {
         return BONGOCAT_ERROR_NETWORK;
     }
 
-    printf("Server address: %s\n", inet_ntoa(ip_of_server->sin_addr));
+    bongocat_log_info("Connecting to server: %s:%d", 
+                     inet_ntoa(ip_of_server->sin_addr),
+                     ntohs(ip_of_server->sin_port));
+    
     if (connect(sock, (struct sockaddr *)ip_of_server, sizeof(*ip_of_server)) < 0)
     {
         bongocat_log_error("Connection failed due to port and ip problems\n");
