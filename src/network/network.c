@@ -51,6 +51,41 @@ static void *sender(void *arg) {
     return NULL;
 }
 
+static bongocat_error_t network_reconnect(void) {
+    static time_t last_reconnect_attempt = 0;
+    time_t now = time(NULL);
+    if (now - last_reconnect_attempt < 5) {
+        bongocat_log_info("Reconnect throttled, try again later");
+        return BONGOCAT_ERROR_NETWORK;
+    }
+    last_reconnect_attempt = now;
+
+    bongocat_log_info("Attempting to reconnect...");
+
+    if (sock > 0) {
+        close(sock);
+        sock = 0;
+    }
+
+    struct sockaddr_in *ip_of_server = &current_config->server_address;
+
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        bongocat_log_error("Socket not created during reconnect\n");
+        return BONGOCAT_ERROR_NETWORK;
+    }
+
+    if (connect(sock, (struct sockaddr *)ip_of_server, sizeof(*ip_of_server)) < 0) {
+        bongocat_log_error("Reconnection failed\n");
+        close(sock);
+        sock = 0;
+        return BONGOCAT_ERROR_NETWORK;
+    }
+
+    bongocat_log_info("Reconnection successful");
+    return BONGOCAT_SUCCESS;
+}
+
 static void *network_handle_key_press_thread_main(void *arg __attribute__((unused)))
 {
   bongocat_log_info("Starting network handle key press thread");
@@ -71,7 +106,14 @@ static void *network_handle_key_press_thread_main(void *arg __attribute__((unuse
       clock_gettime(CLOCK_REALTIME, &ts);
       long long millis = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
       snprintf(msg, sizeof(msg), "key pressed (%s) at %lld", hand, millis);
-      send(fd, msg, strlen(msg), 0);
+      if (send(fd, msg, strlen(msg), 0) < 0) {
+        bongocat_log_error("Send failed, attempting reconnect\n");
+        if (network_reconnect() == BONGOCAT_SUCCESS) {
+          fd = sock;
+        } else {
+          bongocat_log_error("Reconnection failed, giving up on this send\n");
+        }
+      }
 
       // 0.1s
       usleep(100 * 1000);
